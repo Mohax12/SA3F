@@ -1,0 +1,7 @@
+{
+  "name": "محفظ ورش - المصحف المثمن",
+  "description": "تطبيق متكامل لحفظ وتثبيت القرآن الكريم برواية ورش عن نافع بالأحزاب والأثمان الكاملة (480 ثمناً) مع قراءة الثمن كاملاً والتكرار والتحديات والمنبهات.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

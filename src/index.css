@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .font-quran {
+    font-family: 'Amiri Quran', 'Scheherazade New', 'Amiri', 'Noto Naskh Arabic', serif;
+    font-feature-settings: "cv01", "cv02", "ss01";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Enforce cohesive vertical layout without any horizontal push or overflow */
+html {
+  overflow-x: hidden;
+  max-width: 100vw;
+  scroll-behavior: smooth;
+}
+
+body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+}
+
+/* Light Mode Overrides */
+html.light {
+  color-scheme: light;
+}
+
+html.light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light .bg-slate-950 {
+  background-color: #f1f5f9;
+}
+
+html.light .bg-slate-950\/90,
+html.light .bg-slate-950\/80,
+html.light .bg-slate-950\/70,
+html.light .bg-slate-950\/60,
+html.light .bg-slate-900\/60,
+html.light .bg-slate-900\/40 {
+  background-color: #ffffff;
+}
+
+html.light .border-slate-800,
+html.light .border-slate-900,
+html.light .border-emerald-950\/80 {
+  border-color: #e2e8f0;
+}
+
+html.light .text-slate-100,
+html.light .text-slate-200 {
+  color: #0f172a;
+}
+
+html.light .text-slate-300,
+html.light .text-slate-400 {
+  color: #334155;
+}
+
+html.light .text-slate-500 {
+  color: #64748b;
+}
+
+html.light .font-quran {
+  color: #064e3b;
+}
+
+/* Custom smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.8);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.35);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.65);
+}
