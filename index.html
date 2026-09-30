@@ -2,20 +2,103 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Environment constraint: HMR is disabled in AI Studio iframe; handle Vite client gracefully
+      (function() {
+        ['error', 'warn', 'info', 'log', 'debug', 'trace'].forEach(function(method) {
+          const orig = console[method];
+          console[method] = function() {
+            var args = Array.prototype.slice.call(arguments);
+            var text = args.map(function(a) {
+              if (typeof a === 'string') return a;
+              try { return JSON.stringify(a); } catch(_) { return String(a); }
+            }).join(' ');
+            if (text.includes('[vite]') || text.includes('vite-hmr') || text.includes('WebSocket') || text.includes('failed to connect to websocket')) {
+              return;
+            }
+            if (orig) orig.apply(console, args);
+          };
+        });
+
+        window.addEventListener('error', function(e) {
+          var msg = (e && (e.message || e.filename || '')) || '';
+          if (String(msg).includes('[vite]') || String(msg).includes('@vite')) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return false;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = (e && e.reason) || '';
+          if (String(reason).includes('[vite]') || String(reason).includes('WebSocket')) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return false;
+          }
+        }, true);
+
+        const OrigWebSocket = window.WebSocket;
+        if (OrigWebSocket) {
+          window.WebSocket = function(url, protocols) {
+            const urlStr = String(url || '');
+            const protoStr = Array.isArray(protocols) ? protocols.join(' ') : String(protocols || '');
+            if (urlStr.includes('vite') || protoStr.includes('vite-hmr') || protoStr.includes('vite-ping')) {
+              const target = new EventTarget();
+              const fakeWs = {
+                url,
+                readyState: 1, // OPEN
+                send: function() {},
+                close: function() {},
+                addEventListener: target.addEventListener.bind(target),
+                removeEventListener: target.removeEventListener.bind(target),
+                dispatchEvent: target.dispatchEvent.bind(target),
+                onopen: null,
+                onclose: null,
+                onerror: null,
+                onmessage: null,
+              };
+              setTimeout(() => {
+                target.dispatchEvent(new Event('open'));
+                if (typeof fakeWs.onopen === 'function') fakeWs.onopen(new Event('open'));
+              }, 20);
+              return fakeWs;
+            }
+            return new OrigWebSocket(url, protocols);
+          };
+          window.WebSocket.prototype = OrigWebSocket.prototype;
+          window.WebSocket.CONNECTING = OrigWebSocket.CONNECTING;
+          window.WebSocket.OPEN = OrigWebSocket.OPEN;
+          window.WebSocket.CLOSING = OrigWebSocket.CLOSING;
+          window.WebSocket.CLOSED = OrigWebSocket.CLOSED;
+        }
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
     <title>محفظ ورش - المصحف المثمن</title>
     <meta name="description" content="تطبيق متكامل لحفظ وتثبيت القرآن الكريم برواية ورش عن نافع بالأحزاب والأثمان الكاملة (480 ثمناً) مع قراءة الثمن كاملاً والتكرار والتحديات والمنبهات." />
     <meta property="og:title" content="محفظ ورش - المصحف المثمن" />
     <meta property="og:description" content="تطبيق متكامل لحفظ وتثبيت القرآن الكريم برواية ورش عن نافع بالأحزاب والأثمان الكاملة (480 ثمناً) مع قراءة الثمن كاملاً والتكرار والتحديات والمنبهات." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    
+    <!-- PWA & Mobile Meta Tags -->
+    <meta name="theme-color" content="#022c22" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="محفظ ورش" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+
+    <!-- Google Arabic Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Cairo:wght@300;400;500;600;700;800;900&family=Noto+Naskh+Arabic:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Scheherazade+New:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased font-['Cairo',sans-serif]">
+  <body class="bg-slate-950 text-slate-100 antialiased font-['Cairo',sans-serif] overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

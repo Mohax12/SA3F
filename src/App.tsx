@@ -27,9 +27,16 @@ import { BackupModal } from './components/BackupModal';
 import { AudioSettingsModal } from './components/AudioSettingsModal';
 import { ChallengesModal } from './components/ChallengesModal';
 import { RemindersModal, ReminderItem } from './components/RemindersModal';
+import { RecitationModal } from './components/RecitationModal';
+import { InstallAppModal } from './components/InstallAppModal';
+import { DeveloperWordModal } from './components/DeveloperWordModal';
+import { AuthModal } from './components/AuthModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { usePWAInstall } from './utils/usePWAInstall';
+import { getCurrentUser, AuthUser } from './services/authService';
 import { playIslamicChime, sendBrowserNotification } from './utils/reminderService';
 import { sanitizeAyahText } from './utils/quranText';
-import { Bookmark, Sparkles, FilterX, HelpCircle, ArrowUp, BellRing, Trophy, BookOpen } from 'lucide-react';
+import { Bookmark, Sparkles, FilterX, HelpCircle, ArrowUp, BellRing, Trophy, BookOpen, Smartphone, Mic } from 'lucide-react';
 
 export default function App() {
   const [progress, setProgress] = useState<UserProgressData>(() => loadUserProgress());
@@ -46,7 +53,27 @@ export default function App() {
   const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState(false);
   const [isChallengesOpen, setIsChallengesOpen] = useState(false);
+  const [challengesInitialTab, setChallengesInitialTab] = useState<'challenges' | 'leaderboard' | 'chat'>('chat');
   const [isRemindersOpen, setIsRemindersOpen] = useState(false);
+
+  // New Modals: Recitation, Install App, Developer Word, Auth
+  const [isRecitationOpen, setIsRecitationOpen] = useState(false);
+  const [recitationTargetThumun, setRecitationTargetThumun] = useState<ThumunItem | null>(null);
+  const [isDeveloperWordOpen, setIsDeveloperWordOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getCurrentUser());
+
+  // PWA install state
+  const { showInstallBanner, dismissBanner, isInstalled } = usePWAInstall();
+  const [isInstallAppOpen, setIsInstallAppOpen] = useState(false);
+
+  // Trigger install app modal automatically on entrance if not installed and not dismissed
+  useEffect(() => {
+    if (showInstallBanner && !isInstalled) {
+      setIsInstallAppOpen(true);
+    }
+  }, [showInstallBanner, isInstalled]);
+
   const [activeAlarmNotice, setActiveAlarmNotice] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -292,7 +319,7 @@ export default function App() {
       }`} 
       dir="rtl"
     >
-      {/* Header */}
+      {/* Header with Install App, Chat between Huffaz, Developer Word, and Auth */}
       <Header
         streakDays={progress.streakDays || 1}
         searchQuery={searchQuery}
@@ -301,8 +328,20 @@ export default function App() {
         onOpenDailyReview={() => setIsDailyReviewOpen(true)}
         onOpenBackup={() => setIsBackupOpen(true)}
         onOpenAudioSettings={() => setIsAudioSettingsOpen(true)}
-        onOpenChallenges={() => setIsChallengesOpen(true)}
+        onOpenChallenges={() => {
+          setChallengesInitialTab('challenges');
+          setIsChallengesOpen(true);
+        }}
+        onOpenChat={() => {
+          setChallengesInitialTab('chat');
+          setIsChallengesOpen(true);
+        }}
         onOpenReminders={() => setIsRemindersOpen(true)}
+        onOpenInstallApp={() => setIsInstallAppOpen(true)}
+        isInstalled={isInstalled}
+        onOpenDeveloperWord={() => setIsDeveloperWordOpen(true)}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        currentUser={currentUser}
         theme={theme}
         onToggleTheme={toggleTheme}
         activeFilter={activeFilter}
@@ -318,32 +357,77 @@ export default function App() {
       />
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex-1 space-y-6 w-full">
-        {/* Bookmark Quick Jump Bar (if bookmarked) */}
-        {bookmarkedItem && (
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900/60 to-amber-950/40 border border-amber-500/30 flex items-center justify-between gap-3 shadow-lg shadow-black/20">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 flex items-center justify-center shrink-0">
-                <Bookmark className="w-4 h-4 fill-amber-400 text-amber-400" />
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-5 sm:py-7 flex-1 space-y-5 sm:space-y-6 w-full">
+        {/* Entrance Install App Banner - Only shown on website when NOT installed, completely removed upon install */}
+        {!isInstalled && (
+          <div className="w-full p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 border border-emerald-500/40 shadow-xl shadow-black/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-slate-950 flex items-center justify-center font-bold text-2xl shadow-lg shadow-emerald-950/40 shrink-0">
+                <Smartphone className="w-6 h-6 text-amber-300" />
               </div>
-              <div className="min-w-0">
-                <span className="text-xs font-semibold text-amber-300">
-                  آخر موضع توقفت عنده (الإشارة المرجعية):
-                </span>
-                <p className="text-xs sm:text-sm text-slate-200 truncate font-quran text-base">
-                  {bookmarkedItem.label} · سورة {bookmarkedItem.surahName} · ﴿{sanitizeAyahText(bookmarkedItem.ayahText).slice(0, 50)}...﴾
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-100">
+                    تحميل تطبيق جامع الحفظ على هاتفك
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    أندرويد وآيفون
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1">
+                  ثبّت التطبيق الآن للوصول السريع لـ 480 ثمناً بدون إنترنت والتسميع والتنبيهات اليومية.
                 </p>
               </div>
             </div>
 
-            <button
-              onClick={handleJumpToBookmark}
-              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer shrink-0"
-            >
-              متابعة الحفظ الآن
-            </button>
+            <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+              <button
+                onClick={() => setIsInstallAppOpen(true)}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/40 transition cursor-pointer flex items-center gap-2"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span>تحميل التطبيق الآن</span>
+              </button>
+            </div>
           </div>
         )}
+
+        {/* Quick Recitation Banner Bar */}
+        <div className="w-full">
+          {/* Smart Recitation Card */}
+          <div 
+            onClick={() => {
+              setRecitationTargetThumun(selectedThumun || bookmarkedItem || ALL_AHZAB[0].thumuns[0]);
+              setIsRecitationOpen(true);
+            }}
+            className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-teal-950/70 border border-emerald-500/40 hover:border-emerald-400 transition-all cursor-pointer shadow-lg shadow-black/20 flex items-center justify-between gap-3 group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                <Mic className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-100">
+                    وضع التسميع الذكي والمصحح القرآني
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    رواية ورش
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  سجل تلاوتك بالميكروفون واكتشف الأخطاء والكلمات الناقصة والمستبدلة فوراً
+                </p>
+              </div>
+            </div>
+
+            <button 
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs shrink-0 transition shadow-md"
+            >
+              ابدأ التسميع
+            </button>
+          </div>
+        </div>
 
         {/* 60 Ahzab Visual Index Grid */}
         <HizbGridOverview
@@ -424,14 +508,25 @@ export default function App() {
       )}
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950 py-8 text-center text-xs text-slate-500 space-y-2">
-        <p className="font-['Amiri'] text-sm text-slate-400">
+      <footer className="border-t border-slate-800/80 bg-slate-950 py-8 text-center text-xs text-slate-500 space-y-3">
+        <p className="font-['Amiri'] text-base text-slate-400">
           ﴿وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ﴾
         </p>
         <p>
           جامع الحفظ · مصحف رواية ورش عن نافع من طريق الأزرق · مقسم بـ 60 حزباً و 480 ثمناً
         </p>
+        <div className="flex items-center justify-center gap-3 pt-1">
+          <button
+            onClick={() => setIsDeveloperWordOpen(true)}
+            className="text-amber-400 hover:underline cursor-pointer text-xs font-semibold"
+          >
+            كلمة من مطور المشروع: محمد ساعف
+          </button>
+        </div>
       </footer>
+
+      {/* Offline Indicator Toast */}
+      <OfflineIndicator />
 
       {/* Modal 1: Thumun Detailed Study & Repetition Counter */}
       {selectedThumun && (
@@ -446,6 +541,11 @@ export default function App() {
           onNavigateThumun={handleNavigateThumun}
           canPrev={selectedThumun.id > 1}
           canNext={selectedThumun.id < 480}
+          onOpenRecite={(thumun) => {
+            setSelectedThumun(null);
+            setRecitationTargetThumun(thumun);
+            setIsRecitationOpen(true);
+          }}
         />
       )}
 
@@ -494,6 +594,8 @@ export default function App() {
           onClose={() => setIsChallengesOpen(false)}
           progress={progress}
           isDark={theme === 'dark'}
+          initialTab={challengesInitialTab}
+          currentUser={currentUser}
         />
       )}
 
@@ -507,6 +609,46 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Modal 8: Smart Recitation Mode (التسميع الذكي بالذكاء الاصطناعي برواية ورش) */}
+      {isRecitationOpen && (
+        <RecitationModal
+          initialThumun={recitationTargetThumun}
+          onClose={() => setIsRecitationOpen(false)}
+          onMarkStatus={handleStatusChange}
+          isDark={theme === 'dark'}
+        />
+      )}
+
+      {/* Modal 9: Install App on Entrance / On-Demand for Android & iPhone */}
+      <InstallAppModal
+        isOpen={isInstallAppOpen}
+        onClose={() => {
+          setIsInstallAppOpen(false);
+          dismissBanner();
+        }}
+        onInstalled={() => {
+          setIsInstallAppOpen(false);
+        }}
+        isDark={theme === 'dark'}
+      />
+
+      {/* Modal 10: Word from Project Developer (محمد ساعف) */}
+      <DeveloperWordModal
+        isOpen={isDeveloperWordOpen}
+        onClose={() => setIsDeveloperWordOpen(false)}
+        currentUser={currentUser}
+        isDark={theme === 'dark'}
+      />
+
+      {/* Modal 11: Authentication & Account Security */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        currentUser={currentUser}
+        onAuthChange={setCurrentUser}
+        isDark={theme === 'dark'}
+      />
 
       {/* Floating Active Alarm Toast Notice */}
       {activeAlarmNotice && (

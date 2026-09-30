@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Trophy, 
@@ -17,38 +17,21 @@ import {
   UserPlus,
   Trash2,
   BookOpen,
-  MapPin
+  MapPin,
+  Pin,
+  Bell
 } from 'lucide-react';
 import { UserProgressData } from '../types/quran';
+import { realtimeChatService, CircleMessage, EnrolledParticipant } from '../services/realtimeChatService';
+import { AuthUser } from '../services/authService';
 
 interface ChallengesModalProps {
   onClose: () => void;
   progress: UserProgressData;
   onSelectThumunDirectly?: (thumunId: number) => void;
   isDark?: boolean;
-}
-
-export interface EnrolledParticipant {
-  id: string;
-  name: string;
-  location: string;
-  targetHizb: string;
-  dailyGoal: string;
-  hizbCount: number;
-  thumunCount: number;
-  joinedAt: string;
-  likes: number;
-  isCurrentUser?: boolean;
-}
-
-export interface CircleMessage {
-  id: string;
-  senderName: string;
-  senderLocation: string;
-  content: string;
-  category: 'motivation' | 'question' | 'partner' | 'general';
-  createdAt: string;
-  likes: number;
+  initialTab?: 'challenges' | 'leaderboard' | 'chat';
+  currentUser?: AuthUser | null;
 }
 
 interface ChallengeItem {
@@ -63,12 +46,33 @@ interface ChallengeItem {
   isCompleted: boolean;
 }
 
+const SENDER_COLORS = [
+  'text-emerald-400',
+  'text-sky-400',
+  'text-amber-400',
+  'text-teal-400',
+  'text-purple-400',
+  'text-rose-400',
+  'text-cyan-400',
+  'text-indigo-400'
+];
+
+function getSenderColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
+}
+
 export const ChallengesModal: React.FC<ChallengesModalProps> = ({
   onClose,
   progress,
-  isDark = true
+  isDark = true,
+  initialTab = 'chat',
+  currentUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'challenges' | 'leaderboard' | 'chat'>('leaderboard');
+  const [activeTab, setActiveTab] = useState<'challenges' | 'leaderboard' | 'chat'>(initialTab);
   
   // Enrolled participants - starts completely EMPTY as requested by user
   const [participants, setParticipants] = useState<EnrolledParticipant[]>(() => {
@@ -99,29 +103,75 @@ export const ChallengesModal: React.FC<ChallengesModalProps> = ({
   const [formError, setFormError] = useState('');
 
   // New Chat Message State
-  const [chatSender, setChatSender] = useState('');
+  const [chatSender, setChatSender] = useState(() => currentUser?.name || '');
   const [chatContent, setChatContent] = useState('');
   const [chatCategory, setChatCategory] = useState<'motivation' | 'question' | 'partner' | 'general'>('motivation');
   const [encouragedMap, setEncouragedMap] = useState<Record<string, boolean>>({});
   const [likedMessagesMap, setLikedMessagesMap] = useState<Record<string, boolean>>({});
+  const [isLiveConnected, setIsLiveConnected] = useState(true);
+  const [instantAlert, setInstantAlert] = useState<{ id: string; sender: string; content: string } | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Sync participants to localStorage
   useEffect(() => {
-    try {
-      localStorage.setItem('warsh_enrolled_participants', JSON.stringify(participants));
-    } catch (e) {
-      console.warn('Could not save participants:', e);
+    if (activeTab === 'chat') {
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     }
-  }, [participants]);
+  }, [messages, activeTab]);
 
-  // Sync messages to localStorage
+  // Load live messages and participants from server and listen via SSE
   useEffect(() => {
-    try {
-      localStorage.setItem('warsh_circle_messages', JSON.stringify(messages));
-    } catch (e) {
-      console.warn('Could not save messages:', e);
-    }
-  }, [messages]);
+    let isMounted = true;
+
+    realtimeChatService.getMessages().then(msgs => {
+      if (isMounted && msgs && msgs.length > 0) {
+        setMessages(msgs);
+      }
+    });
+
+    realtimeChatService.getParticipants().then(pts => {
+      if (isMounted && pts && pts.length > 0) {
+        setParticipants(pts);
+      }
+    });
+
+    const unsubscribe = realtimeChatService.subscribe((event) => {
+      if (!isMounted) return;
+      setIsLiveConnected(true);
+
+      if (event.type === 'new_message') {
+        const msg = event.payload;
+        setMessages(prev => {
+          if (prev.some(m => m.id === msg.id)) return prev;
+          return [msg, ...prev];
+        });
+        const myName = currentUser?.name || chatSender;
+        if (!myName || msg.senderName.trim().toLowerCase() !== myName.trim().toLowerCase()) {
+          setInstantAlert({ id: msg.id, sender: msg.senderName, content: msg.content });
+          setTimeout(() => {
+            setInstantAlert(prev => prev?.id === msg.id ? null : prev);
+          }, 4500);
+        }
+      } else if (event.type === 'like_message') {
+        setMessages(prev => prev.map(m => m.id === event.payload.id ? { ...m, likes: event.payload.likes } : m));
+      } else if (event.type === 'new_participant') {
+        setParticipants(prev => {
+          if (prev.some(p => p.id === event.payload.id)) return prev;
+          return [event.payload, ...prev];
+        });
+      } else if (event.type === 'encourage_participant') {
+        setParticipants(prev => prev.map(p => p.id === event.payload.id ? { ...p, likes: event.payload.likes } : p));
+      } else if (event.type === 'delete_participant') {
+        setParticipants(prev => prev.filter(p => p.id !== event.payload.id));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
 
   // Calculate current user progress
   let userMastered = 0;
@@ -183,69 +233,76 @@ export const ChallengesModal: React.FC<ChallengesModalProps> = ({
   ];
 
   // Handle Registering a New Participant
-  const handleEnrollParticipant = (e: React.FormEvent) => {
+  const handleEnrollParticipant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) {
       setFormError('يرجى إدخال اسم المنخرط');
       return;
     }
 
-    const newParticipant: EnrolledParticipant = {
-      id: `p_${Date.now()}`,
+    const newP = await realtimeChatService.enrollParticipant({
       name: newName.trim(),
       location: newLocation.trim() || 'المغرب العربي',
       targetHizb: newTargetHizb.trim() || 'الحزب 1',
-      dailyGoal: newDailyGoal.trim() || 'ثمن يومياً',
+      dailyGoal: newDailyGoal.trim() || 'ثمن واحد يومياً مع 20 تكراراً',
       hizbCount: userDoneHizbs,
       thumunCount: userDoneThumuns,
-      joinedAt: new Date().toLocaleDateString('ar-MA', { month: 'short', day: 'numeric' }),
-      likes: 1
-    };
+    });
 
-    setParticipants(prev => [newParticipant, ...prev]);
-    setChatSender(newParticipant.name);
+    setParticipants(prev => {
+      if (prev.some(p => p.id === newP.id)) return prev;
+      return [newP, ...prev];
+    });
+    setChatSender(newP.name);
     setNewName('');
     setNewLocation('');
     setFormError('');
     setShowAddForm(false);
   };
 
-  const handleDeleteParticipant = (id: string) => {
+  const handleDeleteParticipant = async (id: string) => {
     setParticipants(prev => prev.filter(p => p.id !== id));
+    await realtimeChatService.deleteParticipant(id);
   };
 
-  const handleEncourageParticipant = (id: string) => {
+  const handleEncourageParticipant = async (id: string) => {
     if (encouragedMap[id]) return;
     setEncouragedMap(prev => ({ ...prev, [id]: true }));
-    setParticipants(prev => prev.map(p => p.id === id ? { ...p, likes: p.likes + 1 } : p));
+    const newLikes = await realtimeChatService.encourageParticipant(id);
+    if (newLikes !== null) {
+      setParticipants(prev => prev.map(p => p.id === id ? { ...p, likes: newLikes } : p));
+    }
   };
 
   // Handle Posting a Message in Discussion
-  const handlePostMessage = (e: React.FormEvent) => {
+  const handlePostMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatContent.trim()) return;
 
     const sender = chatSender.trim() || (participants[0]?.name || 'متحدٍ في حفظ القرآن');
-    const senderLoc = participants.find(p => p.name === sender)?.location || 'حلقة التثبيت';
+    const senderLoc = participants.find(p => p.name === sender)?.location || 'المغرب العربي';
 
-    const newMsg: CircleMessage = {
-      id: `msg_${Date.now()}`,
+    const newMsg = await realtimeChatService.sendMessage({
       senderName: sender,
       senderLocation: senderLoc,
       content: chatContent.trim(),
       category: chatCategory,
-      createdAt: 'الآن',
-      likes: 0
-    };
+    });
 
-    setMessages(prev => [newMsg, ...prev]);
+    setMessages(prev => {
+      if (prev.some(m => m.id === newMsg.id)) return prev;
+      return [newMsg, ...prev];
+    });
     setChatContent('');
   };
 
-  const handleLikeMessage = (id: string) => {
+  const handleLikeMessage = async (id: string) => {
     if (likedMessagesMap[id]) return;
     setLikedMessagesMap(prev => ({ ...prev, [id]: true }));
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, likes: m.likes + 1 } : m));
+    const updatedLikes = await realtimeChatService.likeMessage(id);
+    if (updatedLikes !== null) {
+      setMessages(prev => prev.map(m => m.id === id ? { ...m, likes: updatedLikes } : m));
+    }
   };
 
   const categoryLabels = {
@@ -318,6 +375,10 @@ export const ChallengesModal: React.FC<ChallengesModalProps> = ({
           >
             <MessageSquare className="w-4 h-4" />
             <span>مجلس التواصل والمذاكرة ({messages.length})</span>
+            <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              مباشر أونلاين
+            </span>
           </button>
 
           <button
@@ -549,132 +610,240 @@ export const ChallengesModal: React.FC<ChallengesModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: COMMUNICATION & DISCUSSION */}
+          {/* TAB 2: COMMUNICATION & DISCUSSION - WHATSAPP / TELEGRAM GROUP STYLE */}
           {activeTab === 'chat' && (
-            <div className="space-y-4">
-              {/* Message Composer Card */}
-              <form 
-                onSubmit={handlePostMessage}
-                className={`p-4 rounded-2xl border space-y-3 ${cardBg}`}
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>كتابة رسالة أو فائدة أو طلب مراجعة</span>
-                  </h4>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <label className="block mb-1 opacity-75">الاسم في المجلس:</label>
-                    <input
-                      type="text"
-                      value={chatSender}
-                      onChange={(e) => setChatSender(e.target.value)}
-                      placeholder={participants[0]?.name || 'اكتب اسمك...'}
-                      className={`w-full p-2 rounded-xl border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-800'}`}
-                    />
+            <div className="flex flex-col rounded-3xl overflow-hidden border border-slate-700/60 shadow-2xl bg-[#0b141a] max-h-[75vh]">
+              {/* WhatsApp / Telegram Group Header Bar */}
+              <div className="bg-[#1f2c34] text-slate-100 px-3 sm:px-4 py-2.5 border-b border-slate-700/60 flex items-center justify-between shadow-md shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-600 to-teal-800 border-2 border-emerald-500/50 flex items-center justify-center font-bold text-amber-300 text-lg shadow-inner">
+                      ۞
+                    </div>
+                    <span className="w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#1f2c34] absolute bottom-0 right-0 animate-pulse" />
                   </div>
-
                   <div>
-                    <label className="block mb-1 opacity-75">نوع المشاركة:</label>
-                    <select
-                      value={chatCategory}
-                      onChange={(e) => setChatCategory(e.target.value as any)}
-                      className={`w-full p-2 rounded-xl border focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-800'}`}
-                    >
-                      <option value="motivation">فائدة وتشجيع 🌟</option>
-                      <option value="question">سؤال في رواية ورش 📖</option>
-                      <option value="partner">طلب رفيق تسميع ومراجعة 🤝</option>
-                      <option value="general">مدارسة عامة 💬</option>
-                    </select>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-xs sm:text-sm font-bold text-slate-100 flex items-center gap-1">
+                        <span>مجموعة حفاظ ورش العامة</span>
+                        <span className="text-emerald-400 text-xs">🟢</span>
+                      </h4>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      {participants.length > 0 ? `${participants.length} حفاظ مسجلون` : 'مجلس التواصي بالحق'} · متصل الآن
+                    </p>
                   </div>
                 </div>
 
-                <div>
-                  <textarea
-                    rows={2}
-                    required
-                    value={chatContent}
-                    onChange={(e) => setChatContent(e.target.value)}
-                    placeholder="اكتب هنا فائدة في ثمن، استفساراً في المتشابهات، أو دعوة لمراجعة حزب..."
-                    className={`w-full p-3 rounded-xl border text-xs transition resize-none focus:outline-none focus:border-emerald-500 ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-800'}`}
-                  />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    مباشر
+                  </span>
                 </div>
+              </div>
 
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs transition cursor-pointer shadow-lg flex items-center gap-1.5"
+              {/* Pinned Note Banner (مثل تلغرام/واتساب) */}
+              <div className="bg-[#182229] border-b border-slate-700/40 px-3.5 py-1.5 flex items-center justify-between text-[11px] text-slate-300 shrink-0">
+                <div className="flex items-center gap-2 truncate">
+                  <Pin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="font-semibold text-amber-300">رسالة مثبتة:</span>
+                  <span className="truncate opacity-80">
+                    مجلس مدارسة الأثمان وتثبيت القرآن برواية ورش عن نافع. تواصلوا بالخير وانشروا فوائد المتشابهات.
+                  </span>
+                </div>
+              </div>
+
+              {/* Instant Alert Banner (تنبيهات فورية عند وصول رسالة جديدة) */}
+              {instantAlert && (
+                <div 
+                  onClick={() => {
+                    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    setInstantAlert(null);
+                  }}
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-slate-950 px-3.5 py-2 text-xs font-bold flex items-center justify-between shadow-lg cursor-pointer transition animate-in slide-in-from-top duration-200 shrink-0 border-b border-emerald-400/40"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="w-2 h-2 rounded-full bg-amber-300 animate-ping shrink-0" />
+                    <Bell className="w-3.5 h-3.5 shrink-0" />
+                    <span>تنبيه فوري: رسالة من <strong>{instantAlert.sender}</strong></span>
+                    <span className="truncate opacity-90 text-[11px] font-normal">«{instantAlert.content}»</span>
+                  </div>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setInstantAlert(null); }}
+                    className="p-1 hover:bg-emerald-700/30 rounded-full cursor-pointer shrink-0"
+                    title="إغلاق التنبيه"
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>إرسال للمجلس</span>
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
-              </form>
+              )}
 
-              {/* Messages Feed */}
-              {messages.length === 0 ? (
-                <div className={`p-8 text-center rounded-2xl border border-dashed space-y-2 ${cardBg}`}>
-                  <MessageSquare className="w-8 h-8 text-emerald-500/40 mx-auto" />
-                  <h4 className="text-sm font-semibold">المجلس مفتوح لتواصل الحفاظ</h4>
-                  <p className="text-xs opacity-75">
-                    كن أول من يكتب رسالة أو فائدة أو سؤالاً في رواية ورش لتستفيد الحلقة كاملة!
-                  </p>
+              {/* Chat Messages Body (WhatsApp Chat Wallpaper Style) */}
+              <div className="p-3 sm:p-4 overflow-y-auto space-y-2.5 flex-1 min-h-[320px] max-h-[50vh] bg-[#0b141a] bg-[radial-gradient(#1a2730_1px,transparent_1px)] [background-size:24px_24px]">
+                {/* Date Badge */}
+                <div className="flex justify-center my-1 sticky top-1 z-10">
+                  <span className="px-3 py-0.5 rounded-lg bg-[#182229]/95 border border-slate-700/60 text-slate-400 text-[10px] font-semibold shadow">
+                    اليوم · مجلس التواصي بالحق
+                  </span>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {messages.map((msg) => {
+
+                {messages.length === 0 ? (
+                  <div className="p-8 text-center rounded-2xl border border-dashed border-slate-800 space-y-2 my-auto">
+                    <MessageSquare className="w-8 h-8 text-emerald-500/40 mx-auto" />
+                    <h4 className="text-sm font-semibold text-slate-200">المجموعة مفتوحة لتواصل الحفاظ</h4>
+                    <p className="text-xs text-slate-400">
+                      كن أول من يكتب رسالة أو فائدة أو سؤالاً في رواية ورش لتستفيد الحلقة كاملة!
+                    </p>
+                  </div>
+                ) : (
+                  [...messages].reverse().map((msg) => {
+                    const myName = currentUser?.name || chatSender;
+                    const isMe = (myName && msg.senderName.trim().toLowerCase() === myName.trim().toLowerCase()) || msg.senderName === 'أنا';
+                    const nameColor = getSenderColor(msg.senderName);
                     const cat = categoryLabels[msg.category] || categoryLabels.general;
 
                     return (
                       <div 
-                        key={msg.id}
-                        className={`p-4 rounded-2xl border space-y-2.5 transition ${cardBg}`}
+                        key={msg.id} 
+                        className={`flex ${isMe ? 'justify-end' : 'justify-start'} w-full animate-in fade-in duration-150`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-500 font-bold flex items-center justify-center text-xs">
-                              {msg.senderName.slice(0, 1)}
+                        <div className={`rounded-2xl p-2.5 sm:p-3 shadow-md max-w-[85%] sm:max-w-[75%] space-y-1.5 transition ${
+                          isMe 
+                            ? 'bg-[#005c4b] text-white rounded-tr-none border border-emerald-600/30' 
+                            : 'bg-[#202c33] text-slate-100 rounded-tl-none border border-slate-700/50'
+                        }`}>
+                          {/* Sender Name & Category */}
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`font-bold text-xs ${isMe ? 'text-amber-200' : nameColor}`}>
+                                {isMe ? 'أنت' : msg.senderName}
+                              </span>
+                              <span className="text-[10px] opacity-60">
+                                · {msg.senderLocation || 'المغرب العربي'}
+                              </span>
                             </div>
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-bold">{msg.senderName}</span>
-                                <span className="text-[10px] opacity-60">({msg.senderLocation})</span>
-                              </div>
-                              <span className="text-[10px] opacity-50 block">{msg.createdAt}</span>
-                            </div>
+
+                            <span className={`text-[9px] font-semibold px-2 py-0.2 rounded-full border ${
+                              isMe ? 'bg-emerald-950/60 border-emerald-400/40 text-emerald-200' : cat.color
+                            }`}>
+                              {cat.label}
+                            </span>
                           </div>
 
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${cat.color}`}>
-                            {cat.label}
-                          </span>
-                        </div>
+                          {/* Message Content */}
+                          <p className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap select-text pr-1">
+                            {msg.content}
+                          </p>
 
-                        <p className="text-xs sm:text-sm leading-relaxed pr-9 select-text">
-                          {msg.content}
-                        </p>
+                          {/* Footer with Likes & Read Receipt */}
+                          <div className="flex items-center justify-between gap-3 pt-1 text-[10px] opacity-75">
+                            <button
+                              onClick={() => handleLikeMessage(msg.id)}
+                              disabled={likedMessagesMap[msg.id]}
+                              className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition cursor-pointer ${
+                                likedMessagesMap[msg.id] 
+                                  ? 'text-amber-400 bg-amber-400/20' 
+                                  : 'hover:text-amber-400 hover:bg-slate-700/40'
+                              }`}
+                              title="تفاعل بعبارة ما شاء الله"
+                            >
+                              <Heart className={`w-3 h-3 ${likedMessagesMap[msg.id] ? 'fill-amber-400 text-amber-400' : ''}`} />
+                              <span>{msg.likes > 0 ? msg.likes : ''}</span>
+                              <span>{likedMessagesMap[msg.id] ? 'ما شاء الله' : 'تشجيع'}</span>
+                            </button>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-800/40 text-xs">
-                          <button
-                            onClick={() => handleLikeMessage(msg.id)}
-                            disabled={likedMessagesMap[msg.id]}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
-                              likedMessagesMap[msg.id]
-                                ? 'text-amber-500 bg-amber-500/10'
-                                : 'opacity-70 hover:opacity-100 hover:text-amber-500'
-                            }`}
-                          >
-                            <Heart className={`w-3 h-3 ${likedMessagesMap[msg.id] ? 'fill-amber-500 text-amber-500' : ''}`} />
-                            <span>{msg.likes > 0 ? msg.likes : ''}</span>
-                            <span>{likedMessagesMap[msg.id] ? 'تم التفاعل' : 'ما شاء الله'}</span>
-                          </button>
+                            <div className="flex items-center gap-1 font-mono">
+                              <span>{msg.createdAt || 'الآن'}</span>
+                              {isMe && (
+                                <span className="text-[#53bdeb] text-xs font-bold select-none" title="تم التسليم">
+                                  ✓✓
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
-                  })}
+                  })
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* WhatsApp / Telegram Bottom Input Bar */}
+              <form onSubmit={handlePostMessage} className="bg-[#202c33] border-t border-slate-700/60 p-2.5 sm:p-3 space-y-2 shrink-0">
+                {/* Category and Quick Emoji Bar */}
+                <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    {[
+                      { id: 'motivation', label: 'فائدة 🌟' },
+                      { id: 'question', label: 'سؤال ورش 📖' },
+                      { id: 'partner', label: 'رفيق حفظ 🤝' },
+                      { id: 'general', label: 'مدارسة 💬' }
+                    ].map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setChatCategory(c.id as any)}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition cursor-pointer whitespace-nowrap border ${
+                          chatCategory === c.id
+                            ? 'bg-emerald-600 text-slate-950 font-bold border-emerald-500'
+                            : 'bg-[#182229] text-slate-400 border-slate-700 hover:text-slate-200'
+                        }`}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Quick Emojis */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {['🤲', '❤️', '👏', '🌟', '🕌'].map(em => (
+                      <button
+                        key={em}
+                        type="button"
+                        onClick={() => setChatContent(prev => prev ? prev + ' ' + em : em)}
+                        className="hover:scale-125 transition-transform text-sm cursor-pointer p-0.5"
+                        title={`إضافة ${em}`}
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
+
+                {/* Input Row */}
+                <div className="flex items-center gap-2">
+                  {!currentUser && (
+                    <input
+                      type="text"
+                      value={chatSender}
+                      onChange={(e) => setChatSender(e.target.value)}
+                      placeholder="اسمك في المجلس..."
+                      className="w-28 sm:w-36 px-2.5 py-2 rounded-xl bg-[#2a3942] border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  )}
+
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      required
+                      value={chatContent}
+                      onChange={(e) => setChatContent(e.target.value)}
+                      placeholder={currentUser ? `اكتب رسالة في المجموعة باسم ${currentUser.name.split(' ')[0]}...` : "اكتب فائدة أو استفساراً في المجموعة..."}
+                      className="w-full px-4 py-2.5 rounded-full bg-[#2a3942] border border-slate-700 text-slate-100 text-xs sm:text-sm placeholder:text-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={!chatContent.trim()}
+                    className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#02906f] text-slate-950 flex items-center justify-center shadow-lg transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                    title="إرسال في المجموعة"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 

@@ -1,0 +1,24 @@
+[
+  {
+    "id": "hafiz_1790758294523_17a44218",
+    "name": "طارق المحمدي",
+    "email": "tariq@test.com",
+    "salt": "393e7267049b37743998d1df4ebcfd7e",
+    "passwordHash": "bda9b27db3d73222b560855a76be4a0019188bf43a00029f58268785f1230797e38e34f8dce44c9b9500bfa63b09901d8c37aaac2f32468c32b1ef0f5d301588",
+    "location": "الرباط",
+    "targetHizb": "الحزب 1",
+    "memorizedAhzab": 0,
+    "registeredAt": "30 شتنبر 2026، 08:51",
+    "timestamp": 1790758294529
+  },
+  {
+    "id": "hafiz_1790757126442_yrxfy",
+    "name": "أحمد الفاسي",
+    "email": "ahmed@example.com",
+    "location": "فاس، المغرب",
+    "targetHizb": "الحزب 1",
+    "memorizedAhzab": 15,
+    "registeredAt": "30 شتنبر 2026، 08:32",
+    "timestamp": 1790757126476
+  }
+]

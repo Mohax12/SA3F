@@ -17,7 +17,8 @@ import {
   Check,
   ZoomIn,
   ZoomOut,
-  Maximize2
+  Maximize2,
+  Mic
 } from 'lucide-react';
 import { ThumunItem, ThumunProgress, MemorizationStatus } from '../types/quran';
 import { WARSH_RECITERS, getSurahAudioUrl } from '../data/reciters';
@@ -35,6 +36,7 @@ interface ThumunDetailModalProps {
   onNavigateThumun: (direction: 'prev' | 'next') => void;
   canPrev: boolean;
   canNext: boolean;
+  onOpenRecite?: (thumun: ThumunItem) => void;
 }
 
 export const ThumunDetailModal: React.FC<ThumunDetailModalProps> = ({
@@ -47,7 +49,8 @@ export const ThumunDetailModal: React.FC<ThumunDetailModalProps> = ({
   onSaveNote,
   onNavigateThumun,
   canPrev,
-  canNext
+  canNext,
+  onOpenRecite
 }) => {
   const [activeTab, setActiveTab] = useState<'read_full' | 'repeat' | 'notes'>('read_full');
   const [selectedReciterId, setSelectedReciterId] = useState(WARSH_RECITERS[0].id);
@@ -191,6 +194,18 @@ export const ThumunDetailModal: React.FC<ThumunDetailModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Quick Smart Recitation for this Thumun */}
+            {onOpenRecite && (
+              <button
+                onClick={() => onOpenRecite(thumun)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 text-xs font-bold transition cursor-pointer shadow-md"
+                title="تسميع هذا الثمن عبر الميكروفون"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">تسميع الثمن</span>
+              </button>
+            )}
+
             <div className="flex items-center gap-1 border border-slate-800 rounded-xl p-0.5 bg-slate-950">
               <button
                 onClick={() => onNavigateThumun('prev')}
